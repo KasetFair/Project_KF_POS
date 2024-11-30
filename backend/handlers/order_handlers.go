@@ -16,7 +16,7 @@ func GetOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ดึงข้อมูลจากฐานข้อมูล
-	rows, err := db.DB.Query("SELECT id, product_name, order_time FROM orders")
+	rows, err := db.DB.Query("SELECT id, product_name, order_time, amount FROM orders ORDER BY order_time DESC")
 	if err != nil {
 		http.Error(w, "Failed to fetch orders", http.StatusInternalServerError)
 		return
@@ -27,7 +27,7 @@ func GetOrdersHandler(w http.ResponseWriter, r *http.Request) {
 	var orders []models.Order
 	for rows.Next() {
 		var order models.Order
-		if err := rows.Scan(&order.ID, &order.ProductName, &order.OrderTime); err != nil {
+		if err := rows.Scan(&order.ID, &order.ProductName, &order.OrderTime, &order.Amount); err != nil {
 			http.Error(w, "Failed to parse orders", http.StatusInternalServerError)
 			return
 		}
@@ -46,7 +46,7 @@ func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// อ่านข้อมูลจาก Body
-	var order models.Order
+	var order models.CreateOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
@@ -62,15 +62,29 @@ func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
 	// กำหนดเวลาปัจจุบันในเขตเวลา Asia/Bangkok
 	currentTime := time.Now().In(location)
 
+	var allAmount int = 0;
 	// แทรกข้อมูลสินค้าใหม่ลงในฐานข้อมูล พร้อมเวลาปัจจุบัน
-	query := "INSERT INTO orders (product_name, order_time) VALUES ($1, $2) RETURNING id, order_time"
-	err = db.DB.QueryRow(query, order.ProductName, currentTime).Scan(&order.ID, &order.OrderTime)
-	if err != nil {
-		http.Error(w, "Failed to create order", http.StatusInternalServerError)
-		return
+	query := "INSERT INTO orders (product_name, order_time,amount) VALUES ($1, $2, $3) RETURNING id"
+	insertedOrders := []map[string]interface{}{}
+	for productName,amount := range order.Products{
+		var id int
+		err = db.DB.QueryRow(query, productName, currentTime,amount).Scan(&id)
+		if err != nil {
+			http.Error(w, "Failed to create order", http.StatusInternalServerError)
+			return
+		}
+		insertedOrders = append(insertedOrders, map[string]interface{}{
+			"product_name": productName,
+			"amount":       amount,
+		})
+		allAmount += amount
 	}
 
 	// ส่งข้อมูลคำสั่งซื้อใหม่กลับไป
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(order)
+	//json.NewEncoder(w).Encode(order)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"orders": insertedOrders,
+		"price": allAmount*50,
+	})
 }
