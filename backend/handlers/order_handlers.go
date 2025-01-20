@@ -62,10 +62,12 @@ func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
 	// กำหนดเวลาปัจจุบันในเขตเวลา Asia/Bangkok
 	currentTime := time.Now().In(location)
 
-	var allAmount int = 0;
+
 	// แทรกข้อมูลสินค้าใหม่ลงในฐานข้อมูล พร้อมเวลาปัจจุบัน
 	query := "INSERT INTO orders (product_name, order_time,amount) VALUES ($1, $2, $3) RETURNING id"
 	insertedOrders := []map[string]interface{}{}
+	var totalAmount int
+
 	for productName,amount := range order.Products{
 		var id int
 		err = db.DB.QueryRow(query, productName, currentTime,amount).Scan(&id)
@@ -77,14 +79,20 @@ func CreateOrderHandler(w http.ResponseWriter, r *http.Request) {
 			"product_name": productName,
 			"amount":       amount,
 		})
-		allAmount += amount
+		totalAmount += amount
+	}
+
+	// สร้าง Response JSON
+	response := map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"orders":      insertedOrders,
+			"total_price": totalAmount * 50, // สมมติราคาต่อหน่วยคือ 50 บาท
+		},
 	}
 
 	// ส่งข้อมูลคำสั่งซื้อใหม่กลับไป
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	//json.NewEncoder(w).Encode(order)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"orders": insertedOrders,
-		"price": allAmount*50,
-	})
+	json.NewEncoder(w).Encode(response)
 }
